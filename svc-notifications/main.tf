@@ -13,6 +13,8 @@ module "service" {
   memory         = 2048
   desired_count  = var.desired_count
 
+  execution_role_name = "${var.service_name}-exec-role"
+
   environment_variables = {
     SERVER_PORT            = tostring(local.container_port)
     SPRING_PROFILES_ACTIVE = var.environment
@@ -31,7 +33,7 @@ module "service" {
   path_patterns     = ["/notifications*"]
   listener_priority = 120
 
-  # JVM warm-up is 60-90s; leave headroom for slow image pulls and cold starts.
+  # Reported JVM startup is 60-90s. Allow extra time for health checks.
   health_check_grace_period_seconds = 150
 
   log_retention_in_days = 7

@@ -15,6 +15,12 @@ variable "image" {
   type        = string
 }
 
+variable "execution_role_name" {
+  description = "Existing execution-role name to preserve during adoption. Null uses <name>-task-execution-role. Changing this name replaces the role."
+  type        = string
+  default     = null
+}
+
 variable "container_port" {
   description = "Port the container listens on. Drives the port mapping, target group and security group rule."
   type        = number
@@ -64,13 +70,13 @@ variable "environment_variables" {
 }
 
 variable "secrets" {
-  description = "Container env var name => Secrets Manager secret ARN. The execution role is granted GetSecretValue on exactly these ARNs."
+  description = "Container env var name => whole Secrets Manager secret ARN in the standard AWS partition (no JSON-key/version selectors). The execution role is granted GetSecretValue on exactly these ARNs."
   type        = map(string)
   default     = {}
 
   validation {
-    condition     = alltrue([for arn in values(var.secrets) : can(regex("^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$", arn))])
-    error_message = "Every secrets value must be a full Secrets Manager secret ARN."
+    condition     = alltrue([for arn in values(var.secrets) : can(regex("^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", arn))])
+    error_message = "Every secrets value must be a whole Secrets Manager secret ARN, including its six-character suffix, without JSON-key or version selectors."
   }
 }
 
@@ -147,7 +153,7 @@ variable "health_check" {
 }
 
 variable "health_check_grace_period_seconds" {
-  description = "Seconds ECS ignores failing ALB health checks after a task starts. Must exceed the app's worst-case startup time."
+  description = "Seconds ECS ignores failing ALB health checks after a task starts. Choose from observed application readiness plus health-check recovery time and margin; verify during deployment."
   type        = number
 
   validation {

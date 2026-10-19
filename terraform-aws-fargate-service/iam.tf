@@ -13,7 +13,7 @@ locals {
 
 # Used by the ECS agent: pull the image, read secrets, write logs.
 resource "aws_iam_role" "execution" {
-  name               = "${var.name}-task-execution-role"
+  name               = coalesce(var.execution_role_name, "${var.name}-task-execution-role")
   assume_role_policy = local.ecs_tasks_assume_role_policy
   tags               = local.tags
 }

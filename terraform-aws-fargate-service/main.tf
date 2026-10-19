@@ -2,6 +2,16 @@ data "aws_region" "current" {}
 
 locals {
   tags = merge(var.tags, { Service = var.name })
+
+  fargate_memory_by_cpu = {
+    "256"   = [512, 1024, 2048]
+    "512"   = range(1024, 4097, 1024)
+    "1024"  = range(2048, 8193, 1024)
+    "2048"  = range(4096, 16385, 1024)
+    "4096"  = range(8192, 30721, 1024)
+    "8192"  = range(16384, 61441, 4096)
+    "16384" = range(32768, 122881, 8192)
+  }
 }
 
 resource "aws_cloudwatch_log_group" "this" {
@@ -14,25 +24,23 @@ resource "aws_security_group" "this" {
   name        = "${var.name}-service"
   description = "${var.name} tasks"
   vpc_id      = var.vpc_id
-  tags        = local.tags
-}
 
-resource "aws_vpc_security_group_ingress_rule" "from_alb" {
-  security_group_id            = aws_security_group.this.id
-  description                  = "From shared ALB"
-  referenced_security_group_id = var.alb_security_group_id
-  ip_protocol                  = "tcp"
-  from_port                    = var.container_port
-  to_port                      = var.container_port
-  tags                         = local.tags
-}
+  ingress {
+    description     = "From shared ALB"
+    from_port       = var.container_port
+    to_port         = var.container_port
+    protocol        = "tcp"
+    security_groups = [var.alb_security_group_id]
+  }
 
-resource "aws_vpc_security_group_egress_rule" "all" {
-  security_group_id = aws_security_group.this.id
-  description       = "All outbound"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-  tags              = local.tags
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.tags
 }
 
 resource "aws_lb_target_group" "this" {
@@ -111,6 +119,13 @@ resource "aws_ecs_task_definition" "this" {
   ])
 
   tags = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = contains(lookup(local.fargate_memory_by_cpu, tostring(var.cpu), []), var.memory)
+      error_message = "memory must be a supported Linux Fargate value for the selected cpu, including its required increment."
+    }
+  }
 }
 
 resource "aws_ecs_service" "this" {
@@ -142,13 +157,9 @@ resource "aws_ecs_service" "this" {
 
   tags = local.tags
 
-  # ECS rejects a target group that is not yet attached to a listener.
-  depends_on = [aws_lb_listener_rule.this]
-
-  lifecycle {
-    precondition {
-      condition     = var.health_check_grace_period_seconds >= var.health_check.interval * var.health_check.healthy_threshold
-      error_message = "health_check_grace_period_seconds is shorter than health_check.interval * healthy_threshold, the minimum time for a new target to be marked healthy. Set it above the app's worst-case startup time."
-    }
-  }
+  depends_on = [
+    aws_lb_listener_rule.this,
+    aws_iam_role_policy_attachment.execution_managed,
+    aws_iam_role_policy.execution_secrets,
+  ]
 }
