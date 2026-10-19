@@ -32,6 +32,38 @@ The goal is simple. Make mistakes impossible.
 - They get added when a second service needs them. Not before.
 - No `enable_x` flags. Each flag doubles the combinations to support and test.
 
+## Part 3 answers
+
+### 1. Versioning and distribution
+**Choice:** one repo per module, semver git tags, a private registry once there are several modules.
+- The module lives in its own repo: `terraform-aws-fargate-service`.
+- Releases are semver tags like `v1.4.2`. Patch is a fix. Minor adds an optional input. Major is breaking.
+- CI cuts the tag from conventional commits, for example with release-please. The changelog is generated.
+- Tags are protected. A released tag is never moved.
+- Services pin a version. With git: `?ref=v1.4.2`. With a registry: `version = "~> 1.4"`.
+- Start with git tags. Move to a private registry (HCP Terraform, GitLab or Artifactory) as the module count grows. Git refs only allow exact pins. A registry adds version constraints, discovery and docs.
+
+**Why not a monorepo**
+- Service repos are already separate. Teams own their release cadence.
+- A monorepo with unpinned modules makes every module change hit every service on its next plan. One bad merge breaks the fleet.
+- Pinned versions let each team upgrade on its own schedule. The platform team still sees who runs what.
+
+**Supporting pieces**
+- Module CI runs `fmt`, `validate`, `tflint` and `terraform test` with mock providers. It also plans an example service on every PR.
+- Renovate watches every service repo. It opens an upgrade PR when a new module version ships. The PR shows the plan.
+- A version inventory shows which repo runs which module version.
+
+### 2. Rolling out a breaking change
+**Principle:** no flag day. Teams on the old version keep shipping. The upgrade is small, boring and has a deadline.
+1. **Avoid the break if possible.** Add the new input next to the old one. Deprecate the old one with a `check` block warning. Ship it as a minor release.
+2. **If it must break, release `v2.0.0`.** `v1` stays supported on a `v1.x` branch. Security and critical fixes are backported for a fixed window, for example 90 days.
+3. **Make state migration automatic.** Ship `moved` blocks inside the module. The upgrade plan should show zero destroys. If a replacement is unavoidable, document a zero downtime path.
+4. **Write an upgrade guide.** Exact input changes. A before and after example. The expected plan output.
+5. **Pilot first.** The platform team upgrades one low-risk service itself. Then one service per stack, Node.js and JVM. Fix the guide with what was learned.
+6. **Roll out in waves.** Renovate opens upgrade PRs in every repo. Teams merge in their normal flow. PRs with a zero destroy plan are fast-tracked.
+7. **Guard the rollout.** CI blocks any plan that destroys a stateful or networking resource without an explicit approval.
+8. **Track and close.** A dashboard shows repos per major version. Announce the `v1` end of support date early. Pair with teams that are stuck. After the date, CI warns on `v1`. Later it blocks new `v1` usage.
+
 ## Flagged beyond the brief
 - **Migration risks.** The notifications execution role is renamed from `-exec-role` to `-task-execution-role`, so it is replaced. Security group rules move from inline blocks to standalone resources. The old inline `3000` rule becomes unmanaged and must be removed by hand. Review the real plan before applying.
 - **Listener priorities.** `110` and `120` are hand-picked per repo. They will collide as services grow. Options: a priority registry in core-infra, or host-based routing per service.
@@ -39,3 +71,8 @@ The goal is simple. Make mistakes impossible.
 - **Open egress.** Every service allows `0.0.0.0/0` outbound. Narrow it with VPC endpoints for ECR, Secrets Manager and CloudWatch Logs.
 - **State file in git.** Acceptable for the exercise. In production, state lives in S3 with locking and encryption.
 - **Module docs.** Generate the module README with `terraform-docs` so it never drifts from the code.
+
+## Cut for time
+- **Module tests.** `terraform test` with mock providers for the precondition and the secret IAM wiring.
+- **Policy rules.** The RCA names conftest rules. They are not written yet.
+- **Container health check.** An ECS container health check with a `startPeriod` would give a second startup signal next to the ALB.
