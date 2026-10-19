@@ -64,6 +64,16 @@ The goal is simple. Make mistakes impossible.
 7. **Guard the rollout.** CI blocks any plan that destroys a stateful or networking resource without an explicit approval.
 8. **Track and close.** A dashboard shows repos per major version. Announce the `v1` end of support date early. Pair with teams that are stuck. After the date, CI warns on `v1`. Later it blocks new `v1` usage.
 
+## Stretch: CI
+`.github/workflows/terraform.yml` runs on every PR and on `main`.
+- **Static job.** `fmt -check`, module `validate`, `tflint` with the recommended preset, and a guard that fails on hardcoded `vpc-`, `subnet-` or `sg-` IDs in service repos.
+- **Plan job.** One matrix leg per service. It runs `init`, `validate` and `plan`, then writes the plan to the job summary.
+- No AWS credentials are needed. The offline provider block makes `plan` work in CI.
+- The hardcoded ID guard is one of the RCA guardrails, implemented for real.
+- Validating the module found a real issue. It allowed AWS provider 6.x, which it was never tested on. It is now capped at `>= 5.0, < 6.0`.
+
+In a real setup, each service repo calls one reusable workflow owned by the platform team.
+
 ## Flagged beyond the brief
 - **Migration risks.** The notifications execution role is renamed from `-exec-role` to `-task-execution-role`, so it is replaced. Security group rules move from inline blocks to standalone resources. The old inline `3000` rule becomes unmanaged and must be removed by hand. Review the real plan before applying.
 - **Listener priorities.** `110` and `120` are hand-picked per repo. They will collide as services grow. Options: a priority registry in core-infra, or host-based routing per service.
@@ -76,3 +86,4 @@ The goal is simple. Make mistakes impossible.
 - **Module tests.** `terraform test` with mock providers for the precondition and the secret IAM wiring.
 - **Policy rules.** The RCA names conftest rules. They are not written yet.
 - **Container health check.** An ECS container health check with a `startPeriod` would give a second startup signal next to the ALB.
+- **CI hardening.** Pin actions to commit SHAs. Post the plan as a PR comment. Add the tflint AWS ruleset.

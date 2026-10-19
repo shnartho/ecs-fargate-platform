@@ -1,0 +1,93 @@
+name: terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: 1.8.5
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  static:
+    name: fmt, lint, guardrails
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Validate module
+        working-directory: terraform-aws-fargate-service
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: |
+          tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+          for dir in terraform-aws-fargate-service svc-appointments svc-notifications; do
+            echo "::group::tflint $dir"
+            tflint --chdir "$dir" --config "$GITHUB_WORKSPACE/.tflint.hcl"
+            echo "::endgroup::"
+          done
+
+      - name: No hardcoded network IDs in service repos
+        run: |
+          if grep -RInE '"(vpc|subnet|sg)-[0-9a-f]{8,17}"' --include='*.tf' svc-*/; then
+            echo "::error::Hardcoded VPC, subnet or security group ID. Read it from core-infra outputs."
+            exit 1
+          fi
+
+  plan:
+    name: plan (${{ matrix.service }})
+    needs: static
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [svc-appointments, svc-notifications]
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # The offline provider block in providers.tf means no AWS credentials are needed.
+      - run: terraform init -input=false
+      - run: terraform validate
+
+      - name: terraform plan
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          {
+            echo "### Plan: ${{ matrix.service }}"
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
