@@ -3,6 +3,11 @@ variable "service_name" {
   default = "notifications-worker"
 }
 
+variable "environment" {
+  type    = string
+  default = "staging"
+}
+
 variable "image" {
   type    = string
   default = "123456789012.dkr.ecr.eu-central-1.amazonaws.com/notifications-worker:0.9.1"
