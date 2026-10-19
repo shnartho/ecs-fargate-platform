@@ -144,4 +144,11 @@ resource "aws_ecs_service" "this" {
 
   # ECS rejects a target group that is not yet attached to a listener.
   depends_on = [aws_lb_listener_rule.this]
+
+  lifecycle {
+    precondition {
+      condition     = var.health_check_grace_period_seconds >= var.health_check.interval * var.health_check.healthy_threshold
+      error_message = "health_check_grace_period_seconds is shorter than health_check.interval * healthy_threshold, the minimum time for a new target to be marked healthy. Set it above the app's worst-case startup time."
+    }
+  }
 }
