@@ -31,11 +31,8 @@ module "service" {
   path_patterns     = ["/notifications*"]
   listener_priority = 120
 
-  health_check = {
-    interval            = 10
-    unhealthy_threshold = 2
-  }
-  health_check_grace_period_seconds = 10
+  # JVM warm-up is 60-90s; leave headroom for slow image pulls and cold starts.
+  health_check_grace_period_seconds = 150
 
   log_retention_in_days = 7
 
