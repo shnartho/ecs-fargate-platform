@@ -7,7 +7,6 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-platform-challenge-*
 
 # Modules declare provider ranges; only root modules lock exact versions.
 terraform-aws-fargate-service/.terraform.lock.hcl
